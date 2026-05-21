@@ -529,12 +529,29 @@ with tab3:
             "Flux net (DT)":     [round(n) for n in ncf_list],
             "Cumul (DT)":        [round(c) for c in cum_list],
         })
-        st.dataframe(df_table.style.format({
+        def color_signed(val):
+            """Red for negative, green for positive — no matplotlib needed."""
+            if isinstance(val, (int, float)):
+                if val < 0:
+                    intensity = min(abs(val) / (max(abs(min(ncf_list + cum_list)), 1)), 1)
+                    r = int(180 + 75 * intensity)
+                    g = int(60 * (1 - intensity))
+                    b = int(60 * (1 - intensity))
+                    return f"background-color: rgba({r},{g},{b},0.35); color: #ffaaaa;"
+                else:
+                    intensity = min(val / (max(max(ncf_list + cum_list), 1)), 1)
+                    r = int(40 * (1 - intensity))
+                    g = int(160 + 60 * intensity)
+                    b = int(80 * (1 - intensity))
+                    return f"background-color: rgba({r},{g},{b},0.30); color: #aaffbb;"
+            return ""
+
+        styled = df_table.style.format({
             "Production (kWh)": "{:,.0f}", "Revenus (DT)": "{:,.0f}",
             "OpEx (DT)": "{:,.0f}", "Service dette (DT)": "{:,.0f}",
             "Flux net (DT)": "{:,.0f}", "Cumul (DT)": "{:,.0f}",
-        }).background_gradient(subset=["Flux net (DT)","Cumul (DT)"], cmap="RdYlGn"),
-        use_container_width=True)
+        }).applymap(color_signed, subset=["Flux net (DT)", "Cumul (DT)"])
+        st.dataframe(styled, use_container_width=True)
 
 
 # ══════════════════════════════════
