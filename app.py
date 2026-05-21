@@ -550,7 +550,7 @@ with tab3:
             "Production (kWh)": "{:,.0f}", "Revenus (DT)": "{:,.0f}",
             "OpEx (DT)": "{:,.0f}", "Service dette (DT)": "{:,.0f}",
             "Flux net (DT)": "{:,.0f}", "Cumul (DT)": "{:,.0f}",
-        }).applymap(color_signed, subset=["Flux net (DT)", "Cumul (DT)"])
+        }).map(color_signed, subset=["Flux net (DT)", "Cumul (DT)"])
         st.dataframe(styled, use_container_width=True)
 
 
