@@ -766,13 +766,16 @@ with tab5:
             if ds > 0: dscr_rows.append({"Année": y, "DSCR": cf/ds})
         if dscr_rows:
             df_dscr = pd.DataFrame(dscr_rows)
+            df_dscr["Statut"] = df_dscr["DSCR"].apply(
+                lambda v: ">=1.2 Sûr" if v >= 1.2 else (">=1.0 Limite" if v >= 1.0 else "<1.0 Risque")
+            )
             dscr_b = alt.Chart(df_dscr).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                 x=alt.X("Année:O"), y=alt.Y("DSCR:Q", title="DSCR"),
-                color=alt.condition(
-                    alt.datum.DSCR >= 1.2, alt.value("#2ecc71"),
-                    alt.condition(alt.datum.DSCR >= 1.0, alt.value("#f5a623"), alt.value("#e74c3c"))
-                ),
-                tooltip=[alt.Tooltip("Année:O"), alt.Tooltip("DSCR:Q", format=".4f")],
+                color=alt.Color("Statut:N", scale=alt.Scale(
+                    domain=[">=1.2 Sûr", ">=1.0 Limite", "<1.0 Risque"],
+                    range=["#2ecc71", "#f5a623", "#e74c3c"]
+                ), legend=alt.Legend(title="Couverture")),
+                tooltip=[alt.Tooltip("Année:O"), alt.Tooltip("DSCR:Q", format=".4f"), alt.Tooltip("Statut:N")],
             )
             r12 = alt.Chart(pd.DataFrame({"y":[1.2]})).mark_rule(color="#2ecc71", strokeDash=[4,2]).encode(y="y:Q")
             r10 = alt.Chart(pd.DataFrame({"y":[1.0]})).mark_rule(color="#e74c3c", strokeDash=[4,2]).encode(y="y:Q")
