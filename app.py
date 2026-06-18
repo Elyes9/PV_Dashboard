@@ -6,6 +6,7 @@ Run: streamlit run profitpv_dashboard.py
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import altair as alt
@@ -386,13 +387,14 @@ st.markdown("---")
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 Résumé Financier",
     "⚡ Énergie & Production",
     "💵 Flux de Trésorerie",
     "🏗️ Investissement & Financement",
     "📐 Ratios Bancaires",
     "🌍 Impact Environnemental",
+    "🧩 Vue 3D Installation",
 ])
 
 # ── helpers ──────────────────────────────────
@@ -860,6 +862,364 @@ with tab6:
     ]
     for i,(k,v) in enumerate(ctx):
         with [c1,c2,c3][i%3]: info(k, v)
+
+# ══════════════════════════════════
+# TAB 7 — 3D INSTALLATION VIEW (NEW)
+# ══════════════════════════════════
+with tab7:
+    st.markdown('<div class="sec">Vue 3D de l\'Installation PV</div>', unsafe_allow_html=True)
+
+    n_strings = 16
+    panels_per_string = 15
+    n_panels = n_strings * panels_per_string
+    panel_wp = round((kwc * 1000) / n_panels)
+
+    c1, c2, c3, c4 = st.columns(4)
+    pv3d_kpis = [
+        (c1, "Panneaux total",   f"{n_panels}",               "unités",                          ""),
+        (c2, "Strings",          f"{n_strings}",               f"× {panels_per_string} panneaux/string", "kpi-blue"),
+        (c3, "Puissance/panneau",f"{panel_wp} Wc",             f"{kwc:.2f} kWc total",             ""),
+        (c4, "Surface estimée",  f"~{n_panels*5.6:,.0f} m²",   "à 5,6 m²/panneau",                 ""),
+    ]
+    for col, label, val, unit, cls in pv3d_kpis:
+        with col:
+            st.markdown(f'<div class="kpi {cls}"><div class="kpi-label">{label}</div><div class="kpi-value">{val}</div><div class="kpi-unit">{unit}</div></div>', unsafe_allow_html=True)
+
+    pv3d_html = f"""
+<div style="font-family:'Syne',sans-serif;color:#e8eaf0;">
+<style>
+#wrap3d{{width:100%;user-select:none;background:#0d1117;border-radius:12px;padding:16px;}}
+#hdr3d{{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}}
+#hdr3d h2{{font-size:15px;font-weight:700;color:#f5a623;margin:0;}}
+.badge3d{{font-size:11px;padding:3px 9px;border-radius:8px;border:1px solid #1e2d3d;color:#8aa4be;font-family:'DM Mono',monospace;}}
+#controls3d{{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}}
+.ctrl3d{{display:flex;align-items:center;gap:8px;font-size:12px;color:#8aa4be;font-family:'DM Mono',monospace;}}
+.ctrl3d label{{min-width:75px;}}
+.ctrl3d span{{min-width:30px;font-weight:700;color:#f5a623;font-size:12px;}}
+.ctrl3d input[type=range]{{accent-color:#f5a623;}}
+#scene-wrap3d{{width:100%;overflow:hidden;border-radius:10px;border:1px solid #1e2d3d;background:#e5e7eb;position:relative;height:460px;}}
+#cv3d{{display:block;width:100%;height:100%;}}
+#tooltip3d{{position:absolute;pointer-events:none;background:#111820;border:1px solid #f5a623;border-radius:8px;padding:8px 12px;font-size:12px;color:#e8eaf0;display:none;min-width:150px;z-index:10;font-family:'DM Mono',monospace;}}
+#tooltip3d b{{color:#f5a623;}}
+#legend3d{{display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;}}
+.leg3d{{display:flex;align-items:center;gap:6px;font-size:11px;color:#8aa4be;font-family:'DM Mono',monospace;}}
+.leg-sq3d{{width:12px;height:8px;border-radius:2px;}}
+</style>
+
+<div id="wrap3d">
+  <div id="hdr3d">
+    <h2>Vue isométrique interactive</h2>
+    <span class="badge3d">{kwc:.2f} kWc · {n_strings} strings · {panels_per_string} panneaux/string</span>
+  </div>
+
+  <div id="controls3d">
+    <div class="ctrl3d"><label>Angle soleil</label><input type="range" id="sun3d" min="0" max="180" value="60" step="1" style="width:100px"><span id="sun-v3d">60°</span></div>
+    <div class="ctrl3d"><label>Rotation vue</label><input type="range" id="rot3d" min="-60" max="60" value="0" step="1" style="width:100px"><span id="rot-v3d">0°</span></div>
+    <div class="ctrl3d"><label>Élévation</label><input type="range" id="elev3d" min="20" max="60" value="35" step="1" style="width:100px"><span id="elev-v3d">35°</span></div>
+  </div>
+
+  <div id="scene-wrap3d">
+    <canvas id="cv3d"></canvas>
+    <div id="tooltip3d"></div>
+  </div>
+
+  <div id="legend3d">
+    <div class="leg3d"><div class="leg-sq3d" style="background:#2563a8"></div>Face PV (active)</div>
+    <div class="leg3d"><div class="leg-sq3d" style="background:#1a3d6e"></div>Face PV (ombre)</div>
+    <div class="leg3d"><div class="leg-sq3d" style="background:#4b5563"></div>Cadre aluminium</div>
+    <div class="leg3d"><div class="leg-sq3d" style="background:#d97706"></div>String sélectionné</div>
+  </div>
+</div>
+</div>
+
+<script>
+(function(){{
+const cv = document.getElementById('cv3d');
+const ctx = cv.getContext('2d');
+const wrap = document.getElementById('scene-wrap3d');
+const tip = document.getElementById('tooltip3d');
+
+const STRINGS = {n_strings};
+const PANELS_PER_STRING = {panels_per_string};
+const PANEL_WP = {panel_wp};
+const PW = 1.0, PH = 1.65, TILT = 32;
+const GAP_X = 0.15, GAP_Y = 0.35, GROUP_GAP = 0.55;
+
+let sunAngle = 60, rotY = 0, elevAngle = 35;
+let selectedString = -1, hoveredPanel = null;
+let W, H;
+
+function resize(){{
+  W = wrap.clientWidth; H = wrap.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(dpr, dpr);
+  draw();
+}}
+
+function project(x, y, z){{
+  const rRot = rotY * Math.PI/180;
+  const rElev = elevAngle * Math.PI/180;
+  const rx = x * Math.cos(rRot) + z * Math.sin(rRot);
+  const ry = y;
+  const rz = -x * Math.sin(rRot) + z * Math.cos(rRot);
+  const sx = rx - rz * Math.cos(Math.PI/6);
+  const sy = -ry - (rx + rz) * Math.sin(rElev * 0.6);
+  const scale = Math.min(W, H) * 0.062;
+  return {{ x: W/2 + sx * scale, y: H * 0.58 + sy * scale }};
+}}
+
+function getSunDir(){{
+  const az = sunAngle * Math.PI/180;
+  return {{ x: Math.cos(az), y: Math.abs(Math.sin(az))*0.9+0.1, z: Math.sin(az)*0.5 }};
+}}
+
+function panelNormal(tiltRad){{ return {{ x:0, y:Math.cos(tiltRad), z:Math.sin(tiltRad) }}; }}
+function dot(a,b){{ return a.x*b.x+a.y*b.y+a.z*b.z; }}
+
+function lerpColor(a,b,t){{
+  const ah=parseInt(a.slice(1),16), bh=parseInt(b.slice(1),16);
+  const r=Math.round(((ah>>16)&255)*(1-t)+((bh>>16)&255)*t);
+  const g=Math.round(((ah>>8)&255)*(1-t)+((bh>>8)&255)*t);
+  const bl2=Math.round((ah&255)*(1-t)+(bh&255)*t);
+  return `rgb(${{r}},${{g}},${{bl2}})`;
+}}
+function hexToRgb(h,a){{
+  a = a===undefined?1:a;
+  const n=parseInt(h.slice(1),16);
+  return `rgba(${{(n>>16)&255}},${{(n>>8)&255}},${{n&255}},${{a}})`;
+}}
+
+function panelCorners(sx, sz, tiltRad){{
+  const cosT=Math.cos(tiltRad), sinT=Math.sin(tiltRad);
+  const hw=PW/2, hh=PH/2;
+  return [
+    {{x:sx-hw, y:-hh*cosT, z:sz+hh*sinT}},
+    {{x:sx+hw, y:-hh*cosT, z:sz+hh*sinT}},
+    {{x:sx+hw, y: hh*cosT, z:sz-hh*sinT}},
+    {{x:sx-hw, y: hh*cosT, z:sz-hh*sinT}},
+  ];
+}}
+
+function drawPolygon(pts3d, fill, stroke, strokeW){{
+  strokeW = strokeW===undefined?0.5:strokeW;
+  const pts = pts3d.map(p=>project(p.x,p.y,p.z));
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+  if(stroke){{ ctx.strokeStyle=stroke; ctx.lineWidth=strokeW; ctx.stroke(); }}
+}}
+
+function drawLine(a3,b3,color,w){{
+  w = w===undefined?0.8:w;
+  const a=project(a3.x,a3.y,a3.z), b=project(b3.x,b3.y,b3.z);
+  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+  ctx.strokeStyle=color; ctx.lineWidth=w; ctx.stroke();
+}}
+
+function lerp2D(a,b,t){{ return {{x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t}}; }}
+
+function pointInPoly(px,py,pts){{
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){{
+    const xi=pts[i].x, yi=pts[i].y, xj=pts[j].x, yj=pts[j].y;
+    if(((yi>py)!=(yj>py)) && (px<(xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside;
+  }}
+  return inside;
+}}
+
+function draw(){{
+  ctx.clearRect(0,0,W,H);
+  const tiltRad = TILT*Math.PI/180;
+  const sun = getSunDir();
+  const norm = panelNormal(tiltRad);
+  const diffuse = Math.max(0, dot(sun, norm));
+
+  const groundPts = [project(-12,0,-3), project(12,0,-3), project(12,0,22), project(-12,0,22)];
+  ctx.beginPath(); ctx.moveTo(groundPts[0].x,groundPts[0].y);
+  groundPts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.closePath(); ctx.fillStyle='#e5e7eb'; ctx.fill();
+
+  ctx.strokeStyle='#d1d5db'; ctx.lineWidth=0.4;
+  for(let xi=-12; xi<=12; xi+=2){{
+    const a=project(xi,0,-3), b=project(xi,0,22);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }}
+  for(let zi=-3; zi<=22; zi+=2){{
+    const a=project(-12,0,zi), b=project(12,0,zi);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }}
+
+  for(let grp=0; grp<4; grp++){{
+    for(let col=0; col<4; col++){{
+      const si = grp*4+col;
+      const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
+      const sx = gapOffset + col*(PW+GAP_X) - 9.2;
+      const isSelected = si === selectedString;
+
+      for(let row=0; row<PANELS_PER_STRING; row++){{
+        const sz = row*(PH*Math.cos(tiltRad)+GAP_Y)+0.5;
+        const corners = panelCorners(sx+PW/2, sz, tiltRad);
+        const topZ = sz + PH/2*Math.sin(tiltRad);
+        const topY = -PH/2*Math.cos(tiltRad);
+
+        const faceLight = 0.35 + diffuse*0.65;
+        let panelColor, frameColor;
+        if(isSelected){{
+          panelColor = lerpColor('#a16207','#fef3c7', faceLight);
+          frameColor = '#d97706';
+        }} else {{
+          panelColor = lerpColor('#1a3d6e','#5b9bd5', faceLight);
+          frameColor = '#4b5563';
+        }}
+
+        const backCorners = corners.map(c=>({{...c, y:c.y+0.03, z:c.z-0.03}}));
+        drawPolygon(backCorners, '#1a1a2e', null);
+        drawPolygon(corners, panelColor, hexToRgb(frameColor,0.6), 0.6);
+
+        if(!isSelected){{
+          const p = corners.map(c=>project(c.x,c.y,c.z));
+          ctx.save();
+          ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
+          p.forEach(pt=>ctx.lineTo(pt.x,pt.y));
+          ctx.closePath(); ctx.clip();
+          ctx.strokeStyle = hexToRgb('#1a3d6e',0.4); ctx.lineWidth=0.4;
+          for(let li=1; li<6; li++){{
+            const t=li/6;
+            const la=lerp2D(p[0],p[3],t), lb=lerp2D(p[1],p[2],t);
+            ctx.beginPath(); ctx.moveTo(la.x,la.y); ctx.lineTo(lb.x,lb.y); ctx.stroke();
+          }}
+          for(let li=1; li<10; li++){{
+            const t=li/10;
+            const la=lerp2D(p[0],p[1],t), lb=lerp2D(p[3],p[2],t);
+            ctx.beginPath(); ctx.moveTo(la.x,la.y); ctx.lineTo(lb.x,lb.y); ctx.stroke();
+          }}
+          ctx.restore();
+        }}
+
+        drawPolygon(corners, 'rgba(0,0,0,0)', frameColor, 1.0);
+
+        if(row===0 || row===PANELS_PER_STRING-1){{
+          const postY = 0.5;
+          drawLine({{x:sx,y:postY,z:topZ}}, {{x:sx,y:topY,z:topZ}}, '#6b7280', 1.2);
+          drawLine({{x:sx+PW,y:postY,z:topZ}}, {{x:sx+PW,y:topY,z:topZ}}, '#6b7280', 1.2);
+        }}
+        if(row===0){{
+          drawLine({{x:sx,y:topY+0.1,z:topZ}}, {{x:sx+PW,y:topY+0.1,z:topZ}}, '#9ca3af', 0.8);
+        }}
+      }}
+    }}
+  }}
+
+  for(let si=0; si<STRINGS; si++){{
+    const grp=Math.floor(si/4), col=si%4;
+    const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
+    const sx = gapOffset + col*(PW+GAP_X) - 9.2 + PW/2;
+    const labelPt = project(sx, 0.1, -1.5);
+    ctx.fillStyle = si===selectedString ? '#d97706' : '#6b7280';
+    ctx.font = (si===selectedString?'bold 11px':'bold 9px') + ` 'DM Mono', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('S'+(si+1), labelPt.x, labelPt.y);
+  }}
+
+  const invPts = [{{x:-11,y:0,z:8}},{{x:-10,y:0,z:8}},{{x:-10,y:0,z:10}},{{x:-11,y:0,z:10}}];
+  drawPolygon(invPts, '#374151', '#1f2937', 1);
+  const invTop = invPts.map(p=>({{...p, y:-1.2}}));
+  drawPolygon(invTop, '#4b5563', '#374151', 1);
+  drawPolygon([invPts[0],invPts[1],invTop[1],invTop[0]], '#374151', '#1f2937', 0.5);
+  drawPolygon([invPts[1],invPts[2],invTop[2],invTop[1]], '#4b5563', '#374151', 0.5);
+  const invLabel = project(-10.5, -1.5, 9);
+  ctx.fillStyle='#9ca3af'; ctx.font = "9px 'DM Mono', monospace"; ctx.textAlign='center';
+  ctx.fillText('Onduleur', invLabel.x, invLabel.y);
+  ctx.fillText('SG110CX×2', invLabel.x, invLabel.y+11);
+
+  for(let si=0; si<STRINGS; si++){{
+    const grp=Math.floor(si/4), col=si%4;
+    const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
+    const sx = gapOffset + col*(PW+GAP_X) - 9.2;
+    drawLine({{x:sx,y:-0.05,z:1.0}}, {{x:-10.5,y:-0.05,z:9}}, hexToRgb('#6b7280',0.3), 0.5);
+  }}
+}}
+
+cv.addEventListener('mousemove', function(e){{
+  const rect = cv.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const tiltRad = TILT*Math.PI/180;
+  let found = null;
+  for(let si=STRINGS-1; si>=0 && !found; si--){{
+    for(let row=PANELS_PER_STRING-1; row>=0; row--){{
+      const grp=Math.floor(si/4), col=si%4;
+      const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
+      const sx = gapOffset + col*(PW+GAP_X) - 9.2;
+      const sz = row*(PH*Math.cos(tiltRad)+GAP_Y)+0.5;
+      const corners = panelCorners(sx+PW/2, sz, tiltRad);
+      const pts = corners.map(c=>project(c.x,c.y,c.z));
+      if(pointInPoly(mx,my,pts)){{ found={{si:si,row:row}}; break; }}
+    }}
+  }}
+  if(found){{
+    cv.style.cursor='pointer';
+    tip.style.display='block';
+    tip.style.left=(e.clientX-rect.left+14)+'px';
+    tip.style.top=(e.clientY-rect.top-10)+'px';
+    tip.innerHTML='<b>String '+(found.si+1)+'</b><br>Panneau #'+(found.row+1)+' / '+PANELS_PER_STRING+'<br>Puissance: '+PANEL_WP+' Wc';
+    hoveredPanel = found;
+  }} else {{
+    cv.style.cursor='default'; tip.style.display='none'; hoveredPanel = null;
+  }}
+}});
+
+cv.addEventListener('click', function(){{
+  if(hoveredPanel){{
+    selectedString = selectedString===hoveredPanel.si ? -1 : hoveredPanel.si;
+    draw();
+  }}
+}});
+cv.addEventListener('mouseleave', function(){{ tip.style.display='none'; }});
+
+document.getElementById('sun3d').addEventListener('input', function(e){{
+  sunAngle=+e.target.value;
+  document.getElementById('sun-v3d').textContent=sunAngle+'°';
+  draw();
+}});
+document.getElementById('rot3d').addEventListener('input', function(e){{
+  rotY=+e.target.value;
+  document.getElementById('rot-v3d').textContent=rotY+'°';
+  draw();
+}});
+document.getElementById('elev3d').addEventListener('input', function(e){{
+  elevAngle=+e.target.value;
+  document.getElementById('elev-v3d').textContent=elevAngle+'°';
+  draw();
+}});
+
+const ro = new ResizeObserver(function(){{ resize(); }});
+ro.observe(wrap);
+setTimeout(resize, 50);
+}})();
+</script>
+"""
+    components.html(pv3d_html, height=620, scrolling=False)
+
+    st.markdown('<div class="sec">Disposition Électrique</div>', unsafe_allow_html=True)
+    col_e1, col_e2 = st.columns(2)
+    electrical_info = [
+        ("Configuration",         f"{n_strings} strings × {panels_per_string} panneaux en série"),
+        ("Puissance par string",  f"{panels_per_string * panel_wp / 1000:.2f} kWc"),
+        ("Total MPPT requis",     f"{n_strings} (2 onduleurs × ~8 MPPT chacun, selon modèle)"),
+        ("Panneau unitaire",      f"~{panel_wp} Wc, Si-mono"),
+        ("Inclinaison",           "32° (orientation Sud)"),
+        ("Surface au sol estimée",f"~{n_panels*5.6:,.0f} m² (5,6 m²/panneau avec espacement)"),
+    ]
+    for i, (k, v) in enumerate(electrical_info):
+        with col_e1 if i % 2 == 0 else col_e2:
+            st.markdown(f'<div class="info"><strong>{k} :</strong> {v}</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="info" style="margin-top:8px;">💡 <strong>Astuce :</strong> cliquez sur un panneau dans la vue 3D pour mettre en surbrillance son string complet. Utilisez les curseurs pour faire pivoter la vue et simuler l\'angle du soleil à différentes heures de la journée.</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # FOOTER
