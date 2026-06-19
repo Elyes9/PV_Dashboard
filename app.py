@@ -873,17 +873,30 @@ with tab7:
     panels_per_string = 15
     n_panels = n_strings * panels_per_string
     panel_wp = round((kwc * 1000) / n_panels)
+    n_inverters = 3
+    # Distribute 16 strings across 3 inverters as evenly as possible: 6/5/5
+    base = n_strings // n_inverters
+    rem = n_strings % n_inverters
+    inv_string_counts = [base + (1 if i < rem else 0) for i in range(n_inverters)]
+    inv_assignment = []  # inv_assignment[string_index] = inverter_index (0,1,2)
+    for inv_idx, cnt in enumerate(inv_string_counts):
+        inv_assignment += [inv_idx] * cnt
+    inv_kva_each = round((kwc * 1000 / n_inverters) / 1000, 1)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     pv3d_kpis = [
         (c1, "Panneaux total",   f"{n_panels}",               "unités",                          ""),
         (c2, "Strings",          f"{n_strings}",               f"× {panels_per_string} panneaux/string", "kpi-blue"),
-        (c3, "Puissance/panneau",f"{panel_wp} Wc",             f"{kwc:.2f} kWc total",             ""),
-        (c4, "Surface estimée",  f"~{n_panels*5.6:,.0f} m²",   "à 5,6 m²/panneau",                 ""),
+        (c3, "Onduleurs",        f"{n_inverters}",             f"~{inv_kva_each} kWc chacun",      "kpi-green"),
+        (c4, "Puissance/panneau",f"{panel_wp} Wc",             f"{kwc:.2f} kWc total",             ""),
+        (c5, "Surface estimée",  f"~{n_panels*5.6:,.0f} m²",   "à 5,6 m²/panneau",                 ""),
     ]
     for col, label, val, unit, cls in pv3d_kpis:
         with col:
             st.markdown(f'<div class="kpi {cls}"><div class="kpi-label">{label}</div><div class="kpi-value">{val}</div><div class="kpi-unit">{unit}</div></div>', unsafe_allow_html=True)
+
+    inv_assignment_js = "[" + ",".join(str(x) for x in inv_assignment) + "]"
+    inv_string_counts_js = "[" + ",".join(str(x) for x in inv_string_counts) + "]"
 
     pv3d_html = f"""
 <div style="font-family:'Syne',sans-serif;color:#e8eaf0;">
@@ -897,11 +910,14 @@ with tab7:
 .ctrl3d label{{min-width:75px;}}
 .ctrl3d span{{min-width:30px;font-weight:700;color:#f5a623;font-size:12px;}}
 .ctrl3d input[type=range]{{accent-color:#f5a623;}}
+.mode-toggle{{display:flex;gap:6px;}}
+.mode-btn{{font-size:11px;padding:5px 11px;border-radius:7px;border:1px solid #1e2d3d;background:#111820;color:#8aa4be;cursor:pointer;font-family:'DM Mono',monospace;transition:all .15s;}}
+.mode-btn.active{{background:#f5a623;color:#0d1117;border-color:#f5a623;font-weight:700;}}
 #scene-wrap3d{{width:100%;overflow:hidden;border-radius:10px;border:1px solid #1e2d3d;background:#e5e7eb;position:relative;height:460px;}}
 #cv3d{{display:block;width:100%;height:100%;}}
-#tooltip3d{{position:absolute;pointer-events:none;background:#111820;border:1px solid #f5a623;border-radius:8px;padding:8px 12px;font-size:12px;color:#e8eaf0;display:none;min-width:150px;z-index:10;font-family:'DM Mono',monospace;}}
+#tooltip3d{{position:absolute;pointer-events:none;background:#111820;border:1px solid #f5a623;border-radius:8px;padding:8px 12px;font-size:12px;color:#e8eaf0;display:none;min-width:160px;z-index:10;font-family:'DM Mono',monospace;}}
 #tooltip3d b{{color:#f5a623;}}
-#legend3d{{display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;}}
+#legend3d{{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;}}
 .leg3d{{display:flex;align-items:center;gap:6px;font-size:11px;color:#8aa4be;font-family:'DM Mono',monospace;}}
 .leg-sq3d{{width:12px;height:8px;border-radius:2px;}}
 </style>
@@ -909,13 +925,19 @@ with tab7:
 <div id="wrap3d">
   <div id="hdr3d">
     <h2>Vue isométrique interactive</h2>
-    <span class="badge3d">{kwc:.2f} kWc · {n_strings} strings · {panels_per_string} panneaux/string</span>
+    <span class="badge3d">{kwc:.2f} kWc · {n_strings} strings · {n_inverters} onduleurs</span>
   </div>
 
   <div id="controls3d">
     <div class="ctrl3d"><label>Angle soleil</label><input type="range" id="sun3d" min="0" max="180" value="60" step="1" style="width:100px"><span id="sun-v3d">60°</span></div>
     <div class="ctrl3d"><label>Rotation vue</label><input type="range" id="rot3d" min="-60" max="60" value="0" step="1" style="width:100px"><span id="rot-v3d">0°</span></div>
     <div class="ctrl3d"><label>Élévation</label><input type="range" id="elev3d" min="20" max="60" value="35" step="1" style="width:100px"><span id="elev-v3d">35°</span></div>
+    <div class="ctrl3d"><label>Surbrillance</label>
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode-string" type="button">String</button>
+        <button class="mode-btn" id="mode-inverter" type="button">Onduleur</button>
+      </div>
+    </div>
   </div>
 
   <div id="scene-wrap3d">
@@ -927,7 +949,9 @@ with tab7:
     <div class="leg3d"><div class="leg-sq3d" style="background:#2563a8"></div>Face PV (active)</div>
     <div class="leg3d"><div class="leg-sq3d" style="background:#1a3d6e"></div>Face PV (ombre)</div>
     <div class="leg3d"><div class="leg-sq3d" style="background:#4b5563"></div>Cadre aluminium</div>
-    <div class="leg3d"><div class="leg-sq3d" style="background:#d97706"></div>String sélectionné</div>
+    <div class="leg3d"><div class="leg-sq3d" style="background:#d97706"></div>Onduleur 1</div>
+    <div class="leg3d"><div class="leg-sq3d" style="background:#2ecc71"></div>Onduleur 2</div>
+    <div class="leg3d"><div class="leg-sq3d" style="background:#3498db"></div>Onduleur 3</div>
   </div>
 </div>
 </div>
@@ -942,11 +966,17 @@ const tip = document.getElementById('tooltip3d');
 const STRINGS = {n_strings};
 const PANELS_PER_STRING = {panels_per_string};
 const PANEL_WP = {panel_wp};
+const N_INVERTERS = {n_inverters};
+const INV_ASSIGN = {inv_assignment_js};
+const INV_COUNTS = {inv_string_counts_js};
+const INV_COLORS = ['#d97706', '#2ecc71', '#3498db'];
+const INV_COLORS_LIGHT = ['#fef3c7', '#d4f7e0', '#cfe8fb'];
 const PW = 1.0, PH = 1.65, TILT = 32;
 const GAP_X = 0.15, GAP_Y = 0.35, GROUP_GAP = 0.55;
 
 let sunAngle = 60, rotY = 0, elevAngle = 35;
 let selectedString = -1, hoveredPanel = null;
+let highlightMode = 'string'; // 'string' or 'inverter'
 let W, H;
 
 function resize(){{
@@ -1031,6 +1061,14 @@ function pointInPoly(px,py,pts){{
   return inside;
 }}
 
+// Compute the x-position offset of inverter boxes spread along the back wall
+function inverterPos(invIdx){{
+  // Spread 3 inverters across the back, near the string groups they serve
+  const spacing = 7.5;
+  const startX = -(N_INVERTERS-1) * spacing / 2;
+  return startX + invIdx * spacing;
+}}
+
 function draw(){{
   ctx.clearRect(0,0,W,H);
   const tiltRad = TILT*Math.PI/180;
@@ -1058,7 +1096,14 @@ function draw(){{
       const si = grp*4+col;
       const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
       const sx = gapOffset + col*(PW+GAP_X) - 9.2;
-      const isSelected = si === selectedString;
+      const invIdx = INV_ASSIGN[si];
+
+      let isHighlighted = false;
+      if(highlightMode === 'string'){{
+        isHighlighted = si === selectedString;
+      }} else {{
+        isHighlighted = selectedString >= 0 && INV_ASSIGN[selectedString] === invIdx;
+      }}
 
       for(let row=0; row<PANELS_PER_STRING; row++){{
         const sz = row*(PH*Math.cos(tiltRad)+GAP_Y)+0.5;
@@ -1068,9 +1113,11 @@ function draw(){{
 
         const faceLight = 0.35 + diffuse*0.65;
         let panelColor, frameColor;
-        if(isSelected){{
-          panelColor = lerpColor('#a16207','#fef3c7', faceLight);
-          frameColor = '#d97706';
+        if(isHighlighted){{
+          const hc = INV_COLORS[invIdx];
+          const hcLight = INV_COLORS_LIGHT[invIdx];
+          panelColor = lerpColor(hc, hcLight, faceLight);
+          frameColor = hc;
         }} else {{
           panelColor = lerpColor('#1a3d6e','#5b9bd5', faceLight);
           frameColor = '#4b5563';
@@ -1080,7 +1127,7 @@ function draw(){{
         drawPolygon(backCorners, '#1a1a2e', null);
         drawPolygon(corners, panelColor, hexToRgb(frameColor,0.6), 0.6);
 
-        if(!isSelected){{
+        if(!isHighlighted){{
           const p = corners.map(c=>project(c.x,c.y,c.z));
           ctx.save();
           ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
@@ -1114,33 +1161,66 @@ function draw(){{
     }}
   }}
 
+  // String labels with inverter-colored tag
   for(let si=0; si<STRINGS; si++){{
     const grp=Math.floor(si/4), col=si%4;
     const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
     const sx = gapOffset + col*(PW+GAP_X) - 9.2 + PW/2;
     const labelPt = project(sx, 0.1, -1.5);
-    ctx.fillStyle = si===selectedString ? '#d97706' : '#6b7280';
-    ctx.font = (si===selectedString?'bold 11px':'bold 9px') + ` 'DM Mono', monospace`;
+    const invIdx = INV_ASSIGN[si];
+    const isHL = (highlightMode==='string' && si===selectedString) ||
+                 (highlightMode==='inverter' && selectedString>=0 && INV_ASSIGN[selectedString]===invIdx);
+    ctx.fillStyle = isHL ? INV_COLORS[invIdx] : '#6b7280';
+    ctx.font = (isHL?'bold 11px':'bold 9px') + ` 'DM Mono', monospace`;
     ctx.textAlign = 'center';
     ctx.fillText('S'+(si+1), labelPt.x, labelPt.y);
+    // small colored dot below indicating inverter assignment
+    const dotPt = project(sx, 0.05, -2.0);
+    ctx.beginPath();
+    ctx.arc(dotPt.x, dotPt.y, 2.4, 0, Math.PI*2);
+    ctx.fillStyle = INV_COLORS[invIdx];
+    ctx.fill();
   }}
 
-  const invPts = [{{x:-11,y:0,z:8}},{{x:-10,y:0,z:8}},{{x:-10,y:0,z:10}},{{x:-11,y:0,z:10}}];
-  drawPolygon(invPts, '#374151', '#1f2937', 1);
-  const invTop = invPts.map(p=>({{...p, y:-1.2}}));
-  drawPolygon(invTop, '#4b5563', '#374151', 1);
-  drawPolygon([invPts[0],invPts[1],invTop[1],invTop[0]], '#374151', '#1f2937', 0.5);
-  drawPolygon([invPts[1],invPts[2],invTop[2],invTop[1]], '#4b5563', '#374151', 0.5);
-  const invLabel = project(-10.5, -1.5, 9);
-  ctx.fillStyle='#9ca3af'; ctx.font = "9px 'DM Mono', monospace"; ctx.textAlign='center';
-  ctx.fillText('Onduleur', invLabel.x, invLabel.y);
-  ctx.fillText('SG110CX×2', invLabel.x, invLabel.y+11);
+  // 3 inverter boxes placed along the back, each colored
+  for(let invIdx=0; invIdx<N_INVERTERS; invIdx++){{
+    const ix = inverterPos(invIdx);
+    const iz = 9;
+    const invPts = [
+      {{x:ix-0.5,y:0,z:iz-1}}, {{x:ix+0.5,y:0,z:iz-1}},
+      {{x:ix+0.5,y:0,z:iz+1}}, {{x:ix-0.5,y:0,z:iz+1}}
+    ];
+    const col = INV_COLORS[invIdx];
+    drawPolygon(invPts, '#374151', hexToRgb(col, 0.9), 1.4);
+    const invTop = invPts.map(p=>({{...p, y:-1.2}}));
+    drawPolygon(invTop, '#4b5563', hexToRgb(col, 0.9), 1.4);
+    drawPolygon([invPts[0],invPts[1],invTop[1],invTop[0]], '#374151', '#1f2937', 0.5);
+    drawPolygon([invPts[1],invPts[2],invTop[2],invTop[1]], '#4b5563', '#374151', 0.5);
+    // colored accent stripe on front face
+    drawPolygon([
+      {{x:ix-0.5,y:-0.15,z:iz-1}}, {{x:ix+0.5,y:-0.15,z:iz-1}},
+      {{x:ix+0.5,y:-0.35,z:iz-1}}, {{x:ix-0.5,y:-0.35,z:iz-1}}
+    ], col, null);
 
+    const invLabel = project(ix, -1.6, iz);
+    ctx.fillStyle = col; ctx.font = "bold 9px 'DM Mono', monospace"; ctx.textAlign='center';
+    ctx.fillText('ONDULEUR '+(invIdx+1), invLabel.x, invLabel.y);
+    ctx.fillStyle = '#9ca3af'; ctx.font = "8px 'DM Mono', monospace";
+    ctx.fillText(INV_COUNTS[invIdx]+' strings', invLabel.x, invLabel.y+10);
+  }}
+
+  // Cable runs from each string to its assigned inverter, colored per inverter
   for(let si=0; si<STRINGS; si++){{
     const grp=Math.floor(si/4), col=si%4;
     const gapOffset = grp*(4*(PW+GAP_X)+GROUP_GAP);
     const sx = gapOffset + col*(PW+GAP_X) - 9.2;
-    drawLine({{x:sx,y:-0.05,z:1.0}}, {{x:-10.5,y:-0.05,z:9}}, hexToRgb('#6b7280',0.3), 0.5);
+    const invIdx = INV_ASSIGN[si];
+    const ix = inverterPos(invIdx);
+    const isHL = (highlightMode==='string' && si===selectedString) ||
+                 (highlightMode==='inverter' && selectedString>=0 && INV_ASSIGN[selectedString]===invIdx);
+    const cableColor = isHL ? hexToRgb(INV_COLORS[invIdx], 0.85) : hexToRgb(INV_COLORS[invIdx], 0.25);
+    const cableW = isHL ? 1.6 : 0.6;
+    drawLine({{x:sx,y:-0.05,z:1.0}}, {{x:ix,y:-0.05,z:9}}, cableColor, cableW);
   }}
 }}
 
@@ -1166,7 +1246,10 @@ cv.addEventListener('mousemove', function(e){{
     tip.style.display='block';
     tip.style.left=(e.clientX-rect.left+14)+'px';
     tip.style.top=(e.clientY-rect.top-10)+'px';
-    tip.innerHTML='<b>String '+(found.si+1)+'</b><br>Panneau #'+(found.row+1)+' / '+PANELS_PER_STRING+'<br>Puissance: '+PANEL_WP+' Wc';
+    const invIdx = INV_ASSIGN[found.si];
+    tip.innerHTML='<b>String '+(found.si+1)+'</b><br>Panneau #'+(found.row+1)+' / '+PANELS_PER_STRING+
+      '<br>Puissance: '+PANEL_WP+' Wc'+
+      '<br>Onduleur: <b style="color:'+INV_COLORS[invIdx]+'">Onduleur '+(invIdx+1)+'</b>';
     hoveredPanel = found;
   }} else {{
     cv.style.cursor='default'; tip.style.display='none'; hoveredPanel = null;
@@ -1197,29 +1280,44 @@ document.getElementById('elev3d').addEventListener('input', function(e){{
   draw();
 }});
 
+document.getElementById('mode-string').addEventListener('click', function(){{
+  highlightMode = 'string';
+  document.getElementById('mode-string').classList.add('active');
+  document.getElementById('mode-inverter').classList.remove('active');
+  draw();
+}});
+document.getElementById('mode-inverter').addEventListener('click', function(){{
+  highlightMode = 'inverter';
+  document.getElementById('mode-inverter').classList.add('active');
+  document.getElementById('mode-string').classList.remove('active');
+  draw();
+}});
+
 const ro = new ResizeObserver(function(){{ resize(); }});
 ro.observe(wrap);
 setTimeout(resize, 50);
 }})();
 </script>
 """
-    components.html(pv3d_html, height=620, scrolling=False)
+    components.html(pv3d_html, height=640, scrolling=False)
 
     st.markdown('<div class="sec">Disposition Électrique</div>', unsafe_allow_html=True)
-    col_e1, col_e2 = st.columns(2)
+    col_e1, col_e2, col_e3 = st.columns(3)
     electrical_info = [
-        ("Configuration",         f"{n_strings} strings × {panels_per_string} panneaux en série"),
-        ("Puissance par string",  f"{panels_per_string * panel_wp / 1000:.2f} kWc"),
-        ("Total MPPT requis",     f"{n_strings} (2 onduleurs × ~8 MPPT chacun, selon modèle)"),
-        ("Panneau unitaire",      f"~{panel_wp} Wc, Si-mono"),
-        ("Inclinaison",           "32° (orientation Sud)"),
-        ("Surface au sol estimée",f"~{n_panels*5.6:,.0f} m² (5,6 m²/panneau avec espacement)"),
+        ("Configuration",          f"{n_strings} strings × {panels_per_string} panneaux en série"),
+        ("Puissance par string",   f"{panels_per_string * panel_wp / 1000:.2f} kWc"),
+        ("Nombre d'onduleurs",     f"{n_inverters} onduleurs"),
+        ("Répartition strings",    f"Onduleur 1: {inv_string_counts[0]} · Onduleur 2: {inv_string_counts[1]} · Onduleur 3: {inv_string_counts[2]}"),
+        ("Puissance par onduleur", f"~{inv_kva_each} kWc chacun"),
+        ("Panneau unitaire",       f"~{panel_wp} Wc, Si-mono"),
+        ("Inclinaison",            "32° (orientation Sud)"),
+        ("Surface au sol estimée", f"~{n_panels*5.6:,.0f} m² (5,6 m²/panneau avec espacement)"),
     ]
     for i, (k, v) in enumerate(electrical_info):
-        with col_e1 if i % 2 == 0 else col_e2:
+        with [col_e1, col_e2, col_e3][i % 3]:
             st.markdown(f'<div class="info"><strong>{k} :</strong> {v}</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="info" style="margin-top:8px;">💡 <strong>Astuce :</strong> cliquez sur un panneau dans la vue 3D pour mettre en surbrillance son string complet. Utilisez les curseurs pour faire pivoter la vue et simuler l\'angle du soleil à différentes heures de la journée.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info" style="margin-top:8px;">💡 <strong>Astuce :</strong> cliquez sur un panneau pour le sélectionner. Basculez entre les modes <strong>String</strong> (surligne uniquement ce string) et <strong>Onduleur</strong> (surligne tous les strings reliés au même onduleur). Les curseurs permettent de faire pivoter la vue et de simuler l\'angle du soleil.</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # FOOTER
